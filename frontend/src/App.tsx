@@ -60,12 +60,13 @@ function App() {
     coarseagg: "", fineagg: "", age: ""
   });
 
-  const [prediction, setPrediction] = useState<number | null>(null);
+  const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [model, setModel] = useState<ModelType>("KNN");
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
 
   const [waiting, setWaiting] = useState(false);
-  const [waitingError, setWaitingError] = useState(false);
+  const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -77,7 +78,8 @@ function App() {
     const timeout = setTimeout(() => controller.abort(), 120000);
 
     setWaiting(true);
-    setWaitingError(false);
+    setError(false);
+    setErrorMessage(null);
 
     try {
       const response = await fetch(`${backendUrl}/predict`, {
@@ -87,12 +89,32 @@ function App() {
         signal: controller.signal
       });
       clearTimeout(timeout);
-      const data: PredictionResponse = await response.json();
-      setPrediction(parseFloat(data.predicted_strength.toFixed(2)));
+
+      if (!response.ok) {
+        const errText = await response.text();
+        setError(true);
+        setErrorMessage(errText || `HTTP ${response.status}`);
+        setWaiting(false);
+        return;
+      }
+
+      const data = await response.json();
+
+      if ("error" in data) {
+        setError(true);
+        setErrorMessage(data.error);
+        setPrediction(null);
+        setWaiting(false);
+      } else {
+        setPrediction({
+          predicted_strength: parseFloat(data.predicted_strength.toFixed(2))
+        });
+        setWaiting(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(true);
       setWaiting(false);
-    } catch (error) {
-      console.error(error);
-      setWaitingError(true);
     }
   };
 
@@ -101,25 +123,44 @@ function App() {
     const timeout = setTimeout(() => controller.abort(), 120000);
 
     setWaiting(true);
-    setWaitingError(false);
+    setError(false);
+    setErrorMessage(null);
 
     try {
       const response = await fetch(`${backendUrl}/model-metrics?model=${model}`, {
         signal: controller.signal
       });
       clearTimeout(timeout);
-      const data: MetricsResponse = await response.json();
-      setMetrics({
-        mae: parseFloat(data.mae.toFixed(2)),
-        rmse: parseFloat(data.rmse.toFixed(2)),
-        r2: parseFloat(data.r2.toFixed(2)),
-        correlation: parseFloat(data.correlation.toFixed(2)),
-        description: data.description
-      });
-      setWaiting(false);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        setError(true);
+        setErrorMessage(errText || `HTTP ${response.status}`);
+        setWaiting(false);
+        return;
+      }
+
+      const data = await response.json();
+
+      if ("error" in data) {
+        setError(true);
+        setErrorMessage(data.error);
+        setMetrics(null);
+        setWaiting(false);
+      } else {
+        setMetrics({
+          mae: parseFloat(data.mae.toFixed(2)),
+          rmse: parseFloat(data.rmse.toFixed(2)),
+          r2: parseFloat(data.r2.toFixed(2)),
+          correlation: parseFloat(data.correlation.toFixed(2)),
+          description: data.description
+        });
+        setWaiting(false);
+      }
     } catch (error) {
       console.error(error);
-      setWaitingError(true);
+      setError(true);
+      setWaiting(false);
     }
   };
 
@@ -178,7 +219,7 @@ function App() {
 
         {prediction !== null && (
           <h3 className="mt-5 text-center text-xl font-semibold text-gray-700">
-            Predicted Strength: {prediction.toFixed(2)} MPa
+            Predicted Strength: {prediction.predicted_strength.toFixed(2)} MPa
           </h3>
         )}
       </div>
@@ -207,35 +248,43 @@ function App() {
       {waiting && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm text-center">
-          {!waitingError ? (
-            <>
-              <div className="flex flex-col items-center">
-                <h3 className="text-lg font-semibold mb-2 flex items-center justify-center space-x-2">
-                  <span>Please wait</span>
-                  <div className="w-5 h-5 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                </h3>
-                <p>
-                  Server might be waking up{" "}
-                  {["⚡", "⏳", "💤", "🚀", "☕"][Math.floor(Math.random() * 5)]}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 className="text-lg font-semibold mb-2 text-red-600">No Response</h3>
-              <p className="mb-4">Please try again later!</p>
-              <button
-                className="bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600"
-                onClick={() => setWaiting(false)}
-              >
-                OK
-              </button>
-            </>
-          )}
+          <div className="flex flex-col items-center">
+            <h3 className="text-lg font-semibold mb-2 flex items-center justify-center space-x-2">
+              <span>Please wait </span>
+              <div className="w-6 h-6 rounded-full border-4 border-t-transparent animate-spin bg-gradient-to-r from-blue-500 to-purple-500"></div>
+            </h3>
+            <p>
+              Server might be spinning up{" "}
+              {["⚡", "⏳", "💤", "🚀", "☕"][Math.floor(Math.random() * 5)]}
+            </p>
+          </div>
         </div>
       </div>
-      )}
-    </div>
+    )}
+
+    {error && !waiting && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm text-center">
+          <h3 className="text-lg font-semibold mb-2 text-red-600">
+            {errorMessage ?? "No Response"}
+          </h3>
+          <p className="mb-4">
+            {errorMessage ? "" : "Please try again later!"}
+          </p>
+          <button
+            className="bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600"
+            onClick={() => {
+              setWaiting(false);
+              setError(false);
+              setErrorMessage(null);
+            }}
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    )}
+  </div>
   );
 }
 
