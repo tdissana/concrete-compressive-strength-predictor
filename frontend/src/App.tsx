@@ -64,6 +64,9 @@ function App() {
   const [model, setModel] = useState<ModelType>("KNN");
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
 
+  const [waiting, setWaiting] = useState(false);
+  const [waitingError, setWaitingError] = useState(false);
+
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -71,7 +74,10 @@ function App() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
+
+    setWaiting(true);
+    setWaitingError(false);
 
     try {
       const response = await fetch(`${backendUrl}/predict`, {
@@ -83,15 +89,19 @@ function App() {
       clearTimeout(timeout);
       const data: PredictionResponse = await response.json();
       setPrediction(parseFloat(data.predicted_strength.toFixed(2)));
+      setWaiting(false);
     } catch (error) {
       console.error(error);
-      alert("No response. Please try again later.");
+      setWaitingError(true);
     }
   };
 
   const handleInfo = async () => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
+
+    setWaiting(true);
+    setWaitingError(false);
 
     try {
       const response = await fetch(`${backendUrl}/model-metrics?model=${model}`, {
@@ -106,9 +116,10 @@ function App() {
         correlation: parseFloat(data.correlation.toFixed(2)),
         description: data.description
       });
+      setWaiting(false);
     } catch (error) {
       console.error(error);
-      alert("No response. Please try again later.");
+      setWaitingError(true);
     }
   };
 
@@ -172,7 +183,6 @@ function App() {
         )}
       </div>
 
-      {/* Modal */}
       {metrics && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm">
@@ -192,6 +202,38 @@ function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {waiting && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm text-center">
+          {!waitingError ? (
+            <>
+              <div className="flex flex-col items-center">
+                <h3 className="text-lg font-semibold mb-2 flex items-center justify-center space-x-2">
+                  <span>Please wait</span>
+                  <div className="w-5 h-5 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </h3>
+                <p>
+                  Server might be waking up{" "}
+                  {["⚡", "⏳", "💤", "🚀", "☕"][Math.floor(Math.random() * 5)]}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lg font-semibold mb-2 text-red-600">No Response</h3>
+              <p className="mb-4">Please try again later!</p>
+              <button
+                className="bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600"
+                onClick={() => setWaiting(false)}
+              >
+                OK
+              </button>
+            </>
+          )}
+        </div>
+      </div>
       )}
     </div>
   );
